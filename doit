@@ -1,0 +1,13 @@
+#!/bin/bash
+set -ueo pipefail
+KERNEL="${1:?Must be set}"
+export KERNEL
+
+if ! ( dpkg -l | grep -q linux-headers-$KERNEL ); then
+	apt update
+	apt install -y linux-headers-$KERNEL make build-essential
+fi
+
+scripts/lets_maK_it.sh
+make
+mv vmware.ko vmware.$KERNEL.$(uname -m).ko
